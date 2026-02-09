@@ -2,15 +2,32 @@ import { useEffect } from "react";
 import { Link, useSearchParams } from "react-router";
 import { toast } from "sonner";
 import type { Route } from "./+types/courses.$slug";
-import { getCourseBySlug, getCourseWithDetails, getLessonCountForCourse } from "~/services/courseService";
+import {
+  getCourseBySlug,
+  getCourseWithDetails,
+  getLessonCountForCourse,
+} from "~/services/courseService";
 import { isUserEnrolled } from "~/services/enrollmentService";
-import { calculateProgress, getLessonProgressForCourse, getNextIncompleteLesson } from "~/services/progressService";
+import {
+  calculateProgress,
+  getLessonProgressForCourse,
+  getNextIncompleteLesson,
+} from "~/services/progressService";
 import { getCurrentUserId } from "~/lib/session";
 import { LessonProgressStatus } from "~/db/schema";
 import { Card, CardContent, CardHeader } from "~/components/ui/card";
 import { Button } from "~/components/ui/button";
 import { Skeleton } from "~/components/ui/skeleton";
-import { AlertTriangle, BookOpen, CheckCircle2, Circle, Clock, Pencil, PlayCircle } from "lucide-react";
+import { Tabs, TabsList, TabsTrigger, TabsContent } from "~/components/ui/tabs";
+import {
+  AlertTriangle,
+  BookOpen,
+  CheckCircle2,
+  Circle,
+  Clock,
+  Pencil,
+  PlayCircle,
+} from "lucide-react";
 import { CourseImage } from "~/components/course-image";
 import { UserAvatar } from "~/components/user-avatar";
 import { data, isRouteErrorResponse } from "react-router";
@@ -54,7 +71,10 @@ export async function loader({ params, request }: Route.LoaderArgs) {
     if (enrolled) {
       progress = calculateProgress(currentUserId, course.id, false, false);
 
-      const progressRecords = getLessonProgressForCourse(currentUserId, course.id);
+      const progressRecords = getLessonProgressForCourse(
+        currentUserId,
+        course.id
+      );
       for (const record of progressRecords) {
         lessonProgressMap[record.lessonId] = record.status;
       }
@@ -143,55 +163,96 @@ export function HydrateFallback() {
 }
 
 export default function CourseDetail({ loaderData }: Route.ComponentProps) {
-  const { course, salesCopyHtml, lessonCount, enrolled, progress, lessonProgressMap, nextLessonId, currentUserId, pppPrice, tierInfo } = loaderData;
+  const {
+    course,
+    salesCopyHtml,
+    lessonCount,
+    enrolled,
+    progress,
+    lessonProgressMap,
+    nextLessonId,
+    currentUserId,
+    pppPrice,
+    tierInfo,
+  } = loaderData;
   const isInstructor = currentUserId === course.instructorId;
   const [searchParams, setSearchParams] = useSearchParams();
 
   useEffect(() => {
     if (searchParams.get("already_enrolled") === "1") {
       toast.info("You're already enrolled in this course.");
-      setSearchParams((prev) => {
-        prev.delete("already_enrolled");
-        return prev;
-      }, { replace: true });
+      setSearchParams(
+        (prev) => {
+          prev.delete("already_enrolled");
+          return prev;
+        },
+        { replace: true }
+      );
     }
   }, [searchParams, setSearchParams]);
 
   const totalDuration = course.modules.reduce(
-    (sum, mod) => sum + mod.lessons.reduce((s, l) => s + (l.durationMinutes ?? 0), 0),
+    (sum, mod) =>
+      sum + mod.lessons.reduce((s, l) => s + (l.durationMinutes ?? 0), 0),
     0
   );
 
   const pppPriceLabel = formatPrice(pppPrice);
   const isDiscounted = pppPrice < course.price;
 
-  const enrollLink = currentUserId
+  const selfPurchaseLink = currentUserId
     ? `/courses/${course.slug}/purchase`
     : `/signup?redirectTo=${encodeURIComponent(`/courses/${course.slug}/purchase`)}`;
 
-  const enrollButton = (
-    <div>
-      <div className="mb-3 text-center">
-        {isDiscounted ? (
-          <>
-            <div className="text-sm text-muted-foreground line-through">
-              {formatPrice(course.price)}
-            </div>
-            <div className="text-2xl font-bold">{pppPriceLabel}</div>
-            <div className="mt-1 inline-block rounded-full bg-green-100 px-2.5 py-0.5 text-xs font-medium text-green-800 dark:bg-green-900/30 dark:text-green-300">
-              {tierInfo.label} — PPP discount
-            </div>
-          </>
-        ) : (
+  const teamPurchaseLink = currentUserId
+    ? `/courses/${course.slug}/purchase?mode=team`
+    : `/signup?redirectTo=${encodeURIComponent(`/courses/${course.slug}/purchase?mode=team`)}`;
+
+  const priceDisplay = (
+    <div className="mb-3 text-center">
+      {isDiscounted ? (
+        <>
+          <div className="text-sm text-muted-foreground line-through">
+            {formatPrice(course.price)}
+          </div>
           <div className="text-2xl font-bold">{pppPriceLabel}</div>
-        )}
-      </div>
-      <Link to={enrollLink}>
-        <Button size="lg" className="w-full">
-          Enroll Now — {pppPriceLabel}
-        </Button>
-      </Link>
+          <div className="mt-1 inline-block rounded-full bg-green-100 px-2.5 py-0.5 text-xs font-medium text-green-800 dark:bg-green-900/30 dark:text-green-300">
+            {tierInfo.label} — PPP discount
+          </div>
+        </>
+      ) : (
+        <div className="text-2xl font-bold">{pppPriceLabel}</div>
+      )}
     </div>
+  );
+
+  const enrollButton = (
+    <Tabs defaultValue="self">
+      <TabsList className="mb-4 w-full">
+        <TabsTrigger value="self" className="flex-1 text-xs">
+          Buy for Myself
+        </TabsTrigger>
+        <TabsTrigger value="team" className="flex-1 text-xs">
+          Buy for Team
+        </TabsTrigger>
+      </TabsList>
+      <TabsContent value="self">
+        {priceDisplay}
+        <Link to={selfPurchaseLink}>
+          <Button size="lg" className="w-full">
+            Enroll Now — {pppPriceLabel}
+          </Button>
+        </Link>
+      </TabsContent>
+      <TabsContent value="team">
+        {priceDisplay}
+        <Link to={teamPurchaseLink}>
+          <Button size="lg" variant="outline" className="w-full">
+            Buy for Your Team
+          </Button>
+        </Link>
+      </TabsContent>
+    </Tabs>
   );
 
   return (
@@ -228,7 +289,9 @@ export default function CourseDetail({ loaderData }: Route.ComponentProps) {
             </Link>
           )}
         </div>
-        <p className="mb-4 text-lg text-muted-foreground">{course.description}</p>
+        <p className="mb-4 text-lg text-muted-foreground">
+          {course.description}
+        </p>
         <div className="flex items-center gap-4 text-sm text-muted-foreground">
           <span className="flex items-center gap-1.5">
             <UserAvatar
@@ -267,7 +330,9 @@ export default function CourseDetail({ loaderData }: Route.ComponentProps) {
           {/* Bottom CTA */}
           {!enrolled && !isInstructor && (
             <div className="mt-8 rounded-lg border bg-muted/50 p-6">
-              <h3 className="mb-2 text-lg font-semibold">Ready to get started?</h3>
+              <h3 className="mb-2 text-lg font-semibold">
+                Ready to get started?
+              </h3>
               <p className="mb-4 text-sm text-muted-foreground">
                 Join this course and start learning today.
               </p>
@@ -290,7 +355,11 @@ export default function CourseDetail({ loaderData }: Route.ComponentProps) {
           <Card className="sticky top-6">
             <CardHeader>
               <h2 className="text-lg font-semibold">
-                {isInstructor ? "Your Course" : enrolled ? "Your Progress" : "Get Started"}
+                {isInstructor
+                  ? "Your Course"
+                  : enrolled
+                    ? "Your Progress"
+                    : "Get Started"}
               </h2>
             </CardHeader>
             <CardContent className="space-y-4">
@@ -312,17 +381,23 @@ export default function CourseDetail({ loaderData }: Route.ComponentProps) {
                       style={{ width: `${progress}%` }}
                     />
                   </div>
-                  {course.modules.length > 0 && (() => {
-                    const targetLessonId = nextLessonId ?? course.modules[0].lessons[0]?.id;
-                    return targetLessonId ? (
-                      <Link to={`/courses/${course.slug}/lessons/${targetLessonId}`}>
-                        <Button className="w-full">
-                          <PlayCircle className="mr-2 size-4" />
-                          {progress > 0 ? "Continue Learning" : "Start Course"}
-                        </Button>
-                      </Link>
-                    ) : null;
-                  })()}
+                  {course.modules.length > 0 &&
+                    (() => {
+                      const targetLessonId =
+                        nextLessonId ?? course.modules[0].lessons[0]?.id;
+                      return targetLessonId ? (
+                        <Link
+                          to={`/courses/${course.slug}/lessons/${targetLessonId}`}
+                        >
+                          <Button className="w-full">
+                            <PlayCircle className="mr-2 size-4" />
+                            {progress > 0
+                              ? "Continue Learning"
+                              : "Start Course"}
+                          </Button>
+                        </Link>
+                      ) : null;
+                    })()}
                 </>
               ) : (
                 enrollButton
@@ -334,7 +409,9 @@ export default function CourseDetail({ loaderData }: Route.ComponentProps) {
                 </div>
                 <div className="flex items-center gap-2">
                   <Clock className="size-4" />
-                  <span>{formatDuration(totalDuration, true, false, false)} total</span>
+                  <span>
+                    {formatDuration(totalDuration, true, false, false)} total
+                  </span>
                 </div>
                 <div className="flex items-center gap-2">
                   <UserAvatar
@@ -364,7 +441,19 @@ function CourseContent({
   isInstructor,
   lessonProgressMap,
 }: {
-  course: { id: number; slug: string; modules: Array<{ id: number; title: string; lessons: Array<{ id: number; title: string; durationMinutes: number | null }> }> };
+  course: {
+    id: number;
+    slug: string;
+    modules: Array<{
+      id: number;
+      title: string;
+      lessons: Array<{
+        id: number;
+        title: string;
+        durationMinutes: number | null;
+      }>;
+    }>;
+  };
   enrolled: boolean;
   isInstructor: boolean;
   lessonProgressMap: Record<number, string>;
@@ -390,8 +479,10 @@ function CourseContent({
                 <ul className="space-y-2">
                   {mod.lessons.map((lesson) => {
                     const status = lessonProgressMap[lesson.id];
-                    const isCompleted = status === LessonProgressStatus.Completed;
-                    const isLessonInProgress = status === LessonProgressStatus.InProgress;
+                    const isCompleted =
+                      status === LessonProgressStatus.Completed;
+                    const isLessonInProgress =
+                      status === LessonProgressStatus.InProgress;
 
                     if (isInstructor) {
                       return (
@@ -405,7 +496,12 @@ function CourseContent({
                             {lesson.durationMinutes && (
                               <span className="flex items-center gap-1 text-xs text-muted-foreground">
                                 <Clock className="size-3" />
-                                {formatDuration(lesson.durationMinutes, true, false, false)}
+                                {formatDuration(
+                                  lesson.durationMinutes,
+                                  true,
+                                  false,
+                                  false
+                                )}
                               </span>
                             )}
                           </Link>
@@ -431,7 +527,12 @@ function CourseContent({
                             {lesson.durationMinutes && (
                               <span className="flex items-center gap-1 text-xs text-muted-foreground">
                                 <Clock className="size-3" />
-                                {formatDuration(lesson.durationMinutes, true, false, false)}
+                                {formatDuration(
+                                  lesson.durationMinutes,
+                                  true,
+                                  false,
+                                  false
+                                )}
                               </span>
                             )}
                           </Link>
@@ -442,7 +543,12 @@ function CourseContent({
                             {lesson.durationMinutes && (
                               <span className="flex items-center gap-1 text-xs text-muted-foreground">
                                 <Clock className="size-3" />
-                                {formatDuration(lesson.durationMinutes, true, false, false)}
+                                {formatDuration(
+                                  lesson.durationMinutes,
+                                  true,
+                                  false,
+                                  false
+                                )}
                               </span>
                             )}
                           </div>
@@ -467,10 +573,14 @@ export function ErrorBoundary({ error }: Route.ErrorBoundaryProps) {
   if (isRouteErrorResponse(error)) {
     if (error.status === 404) {
       title = "Course not found";
-      message = "The course you're looking for doesn't exist or may have been removed.";
+      message =
+        "The course you're looking for doesn't exist or may have been removed.";
     } else if (error.status === 401) {
       title = "Sign in required";
-      message = typeof error.data === "string" ? error.data : "Please select a user from the DevUI panel.";
+      message =
+        typeof error.data === "string"
+          ? error.data
+          : "Please select a user from the DevUI panel.";
     } else {
       title = `Error ${error.status}`;
       message = typeof error.data === "string" ? error.data : error.statusText;

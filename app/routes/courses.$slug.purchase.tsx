@@ -1,5 +1,5 @@
-import { Link, useFetcher, redirect } from "react-router";
-import { useEffect } from "react";
+import { Link, useFetcher, redirect, useSearchParams } from "react-router";
+import { useState, useEffect } from "react";
 import { toast } from "sonner";
 import { z } from "zod";
 import type { Route } from "./+types/courses.$slug.purchase";
@@ -8,28 +8,37 @@ import {
   getCourseWithDetails,
   getLessonCountForCourse,
 } from "~/services/courseService";
-import { isUserEnrolled, enrollUser, getEnrollmentCountForCourse } from "~/services/enrollmentService";
+import {
+  isUserEnrolled,
+  enrollUser,
+  getEnrollmentCountForCourse,
+} from "~/services/enrollmentService";
 import { getCurrentUserId } from "~/lib/session";
 import { CourseStatus } from "~/db/schema";
-import { Card, CardContent, CardHeader } from "~/components/ui/card";
+import { Card, CardContent } from "~/components/ui/card";
 import { Button } from "~/components/ui/button";
-import { BookOpen, Clock, Users, ArrowLeft } from "lucide-react";
+import { Tabs, TabsList, TabsTrigger, TabsContent } from "~/components/ui/tabs";
+import { BookOpen, Clock, Users, ArrowLeft, Minus, Plus } from "lucide-react";
 import { CourseImage } from "~/components/course-image";
 import { UserAvatar } from "~/components/user-avatar";
 import { data } from "react-router";
 import { formatDuration, formatPrice } from "~/lib/utils";
 import { resolveCountry } from "~/lib/country.server";
 import { calculatePppPrice, getCountryTierInfo, COUNTRIES } from "~/lib/ppp";
-import { createPurchase } from "~/services/purchaseService";
+import { createPurchase, createTeamPurchase } from "~/services/purchaseService";
 import { parseFormData, parseParams } from "~/lib/validation";
 
 const purchaseParamsSchema = z.object({
   slug: z.string().min(1),
 });
 
-const purchaseActionSchema = z.object({
-  intent: z.literal("confirm-purchase"),
-});
+const purchaseActionSchema = z.discriminatedUnion("intent", [
+  z.object({ intent: z.literal("confirm-purchase") }),
+  z.object({
+    intent: z.literal("confirm-team-purchase"),
+    quantity: z.coerce.number().int().min(1),
+  }),
+]);
 
 export function meta({ data: loaderData }: Route.MetaArgs) {
   const title = loaderData?.course?.title ?? "Purchase";
@@ -53,7 +62,9 @@ export async function loader({ params, request }: Route.LoaderArgs) {
 
   const currentUserId = await getCurrentUserId(request);
   if (!currentUserId) {
-    throw redirect(`/signup?redirectTo=${encodeURIComponent(`/courses/${slug}/purchase`)}`);
+    throw redirect(
+      `/signup?redirectTo=${encodeURIComponent(`/courses/${slug}/purchase`)}`
+    );
   }
 
   if (isUserEnrolled(currentUserId, course.id)) {
@@ -80,7 +91,7 @@ export async function loader({ params, request }: Route.LoaderArgs) {
     : courseWithDetails.price;
   const tierInfo = getCountryTierInfo(country);
   const countryName = country
-    ? COUNTRIES.find((c) => c.code === country)?.name ?? country
+    ? (COUNTRIES.find((c) => c.code === country)?.name ?? country)
     : null;
 
   return {
@@ -108,10 +119,6 @@ export async function action({ params, request }: Route.ActionArgs) {
     throw data("You must be logged in.", { status: 401 });
   }
 
-  if (isUserEnrolled(currentUserId, course.id)) {
-    throw redirect(`/courses/${slug}`);
-  }
-
   const formData = await request.formData();
   const parsed = parseFormData(formData, purchaseActionSchema);
 
@@ -124,17 +131,39 @@ export async function action({ params, request }: Route.ActionArgs) {
     ? calculatePppPrice(course.price, country)
     : course.price;
 
-  createPurchase(currentUserId, course.id, pppPrice, country);
-  enrollUser(currentUserId, course.id, false, false);
-  throw redirect(`/courses/${slug}/welcome`);
+  if (parsed.data.intent === "confirm-purchase") {
+    if (isUserEnrolled(currentUserId, course.id)) {
+      throw redirect(`/courses/${slug}`);
+    }
+    createPurchase(currentUserId, course.id, pppPrice, country);
+    enrollUser(currentUserId, course.id, false, false);
+    throw redirect(`/courses/${slug}/welcome`);
+  }
+
+  // Team purchase — user does NOT get enrolled themselves
+  const { quantity } = parsed.data;
+  const totalPrice = pppPrice * quantity;
+  createTeamPurchase(currentUserId, course.id, totalPrice, country, quantity);
+  throw redirect(`/team`);
 }
 
 export default function PurchaseConfirmation({
   loaderData,
 }: Route.ComponentProps) {
-  const { course, lessonCount, enrollmentCount, totalDuration, pppPrice, tierInfo, countryName } = loaderData;
+  const {
+    course,
+    lessonCount,
+    enrollmentCount,
+    totalDuration,
+    pppPrice,
+    tierInfo,
+    countryName,
+  } = loaderData;
   const fetcher = useFetcher();
   const isSubmitting = fetcher.state !== "idle";
+  const [searchParams] = useSearchParams();
+  const defaultMode = searchParams.get("mode") === "team" ? "team" : "self";
+  const [quantity, setQuantity] = useState(1);
 
   useEffect(() => {
     if (fetcher.state === "idle" && fetcher.data?.error) {
@@ -143,6 +172,7 @@ export default function PurchaseConfirmation({
   }, [fetcher.state, fetcher.data]);
 
   const isDiscounted = pppPrice < course.price;
+  const teamTotal = pppPrice * quantity;
 
   return (
     <div className="mx-auto max-w-3xl p-6 lg:p-8">
@@ -202,12 +232,12 @@ export default function PurchaseConfirmation({
             </span>
             <span className="flex items-center gap-2">
               <Users className="size-4" />
-              {enrollmentCount}{" "}
-              {enrollmentCount === 1 ? "student" : "students"} enrolled
+              {enrollmentCount} {enrollmentCount === 1 ? "student" : "students"}{" "}
+              enrolled
             </span>
           </div>
 
-          {/* Price + Confirm */}
+          {/* Purchase tabs */}
           <div className="mt-6 border-t pt-6">
             {isDiscounted && countryName && (
               <div className="mb-4 rounded-lg bg-green-50 p-3 dark:bg-green-900/20">
@@ -216,40 +246,133 @@ export default function PurchaseConfirmation({
                 </p>
               </div>
             )}
-            <div className="flex items-center justify-between">
-              <div>
-                {isDiscounted ? (
-                  <>
-                    <span className="text-sm text-muted-foreground">Original price</span>
-                    <div className="text-lg text-muted-foreground line-through">
-                      {formatPrice(course.price)}
+
+            <Tabs defaultValue={defaultMode}>
+              <TabsList className="mb-6 w-full">
+                <TabsTrigger value="self" className="flex-1">
+                  Buy for Myself
+                </TabsTrigger>
+                <TabsTrigger value="team" className="flex-1">
+                  Buy for Your Team
+                </TabsTrigger>
+              </TabsList>
+
+              {/* Buy for Myself */}
+              <TabsContent value="self">
+                <div className="flex items-center justify-between">
+                  <div>
+                    {isDiscounted ? (
+                      <>
+                        <span className="text-sm text-muted-foreground">
+                          Original price
+                        </span>
+                        <div className="text-lg text-muted-foreground line-through">
+                          {formatPrice(course.price)}
+                        </div>
+                        <span className="text-sm text-muted-foreground">
+                          Your price
+                        </span>
+                        <div className="text-3xl font-bold">
+                          {formatPrice(pppPrice)}
+                        </div>
+                      </>
+                    ) : (
+                      <>
+                        <span className="text-sm text-muted-foreground">
+                          Total
+                        </span>
+                        <div className="text-3xl font-bold">
+                          {formatPrice(pppPrice)}
+                        </div>
+                      </>
+                    )}
+                  </div>
+                  <div className="flex items-center gap-3">
+                    <Link to={`/courses/${course.slug}`}>
+                      <Button variant="outline">Go Back</Button>
+                    </Link>
+                    <fetcher.Form method="post">
+                      <input
+                        type="hidden"
+                        name="intent"
+                        value="confirm-purchase"
+                      />
+                      <Button size="lg" disabled={isSubmitting}>
+                        {isSubmitting ? "Processing..." : "Confirm Purchase"}
+                      </Button>
+                    </fetcher.Form>
+                  </div>
+                </div>
+              </TabsContent>
+
+              {/* Buy for Your Team */}
+              <TabsContent value="team">
+                <div className="space-y-6">
+                  {/* Quantity selector */}
+                  <div className="flex items-center gap-4">
+                    <span className="text-sm font-medium">Seats</span>
+                    <div className="flex items-center gap-2">
+                      <Button
+                        variant="outline"
+                        size="icon"
+                        className="size-8"
+                        onClick={() => setQuantity((q) => Math.max(1, q - 1))}
+                        disabled={quantity <= 1}
+                      >
+                        <Minus className="size-4" />
+                      </Button>
+                      <span className="w-10 text-center text-lg font-semibold">
+                        {quantity}
+                      </span>
+                      <Button
+                        variant="outline"
+                        size="icon"
+                        className="size-8"
+                        onClick={() => setQuantity((q) => q + 1)}
+                      >
+                        <Plus className="size-4" />
+                      </Button>
                     </div>
-                    <span className="text-sm text-muted-foreground">Your price</span>
-                    <div className="text-3xl font-bold">{formatPrice(pppPrice)}</div>
-                  </>
-                ) : (
-                  <>
-                    <span className="text-sm text-muted-foreground">Total</span>
-                    <div className="text-3xl font-bold">{formatPrice(pppPrice)}</div>
-                  </>
-                )}
-              </div>
-              <div className="flex items-center gap-3">
-                <Link to={`/courses/${course.slug}`}>
-                  <Button variant="outline">Go Back</Button>
-                </Link>
-                <fetcher.Form method="post">
-                  <input
-                    type="hidden"
-                    name="intent"
-                    value="confirm-purchase"
-                  />
-                  <Button size="lg" disabled={isSubmitting}>
-                    {isSubmitting ? "Processing..." : "Confirm Purchase"}
-                  </Button>
-                </fetcher.Form>
-              </div>
-            </div>
+                  </div>
+
+                  {/* Price breakdown */}
+                  <div>
+                    <div className="text-sm text-muted-foreground">
+                      {formatPrice(pppPrice)} &times; {quantity}{" "}
+                      {quantity === 1 ? "seat" : "seats"}
+                    </div>
+                    <div className="text-3xl font-bold">
+                      {formatPrice(teamTotal)}
+                    </div>
+                  </div>
+
+                  <p className="text-sm text-muted-foreground">
+                    You&apos;ll receive {quantity} unique coupon{" "}
+                    {quantity === 1 ? "link" : "links"} to share with your team
+                    members. Each link grants one person access to this course.
+                  </p>
+
+                  <div className="flex items-center gap-3">
+                    <Link to={`/courses/${course.slug}`}>
+                      <Button variant="outline">Go Back</Button>
+                    </Link>
+                    <fetcher.Form method="post">
+                      <input
+                        type="hidden"
+                        name="intent"
+                        value="confirm-team-purchase"
+                      />
+                      <input type="hidden" name="quantity" value={quantity} />
+                      <Button size="lg" disabled={isSubmitting}>
+                        {isSubmitting
+                          ? "Processing..."
+                          : `Buy ${quantity} ${quantity === 1 ? "Seat" : "Seats"}`}
+                      </Button>
+                    </fetcher.Form>
+                  </div>
+                </div>
+              </TabsContent>
+            </Tabs>
           </div>
         </CardContent>
       </Card>

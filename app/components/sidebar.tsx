@@ -16,6 +16,7 @@ import {
   Sun,
   LogOut,
   Settings,
+  Star,
 } from "lucide-react";
 import { NotificationBell } from "~/components/notification-bell";
 
@@ -45,12 +46,20 @@ interface NotificationItem {
   createdAt: string;
 }
 
+interface GamificationData {
+  level: number;
+  currentLevelXp: number;
+  xpForNextLevel: number;
+  totalXp: number;
+}
+
 interface SidebarProps {
   currentUser: CurrentUser | null;
   recentCourses?: RecentCourse[];
   isTeamAdmin?: boolean;
   notifications?: NotificationItem[];
   notificationUnreadCount?: number;
+  gamification?: GamificationData | null;
 }
 
 interface NavItem {
@@ -123,6 +132,7 @@ export function Sidebar({
   isTeamAdmin = false,
   notifications = [],
   notificationUnreadCount = 0,
+  gamification = null,
 }: SidebarProps) {
   const currentUserRole = currentUser?.role ?? null;
   const [isDark, setIsDark] = useState(false);
@@ -191,6 +201,39 @@ export function Sidebar({
           </NavLink>
         )}
       </nav>
+
+      {gamification && currentUser?.role === UserRole.Student && (
+        <div className="border-t border-sidebar-border p-3">
+          <div className="mb-2 px-3 text-xs font-semibold uppercase tracking-wider text-sidebar-foreground/50">
+            Progress
+          </div>
+          <div className="space-y-2 px-3">
+            <div className="flex items-center gap-2">
+              <Star className="size-4 text-yellow-500" />
+              <span className="text-sm font-medium">
+                Level {gamification.level}
+              </span>
+              <span className="ml-auto text-xs text-sidebar-foreground/50">
+                {gamification.totalXp} XP
+              </span>
+            </div>
+            <div className="space-y-1">
+              <div className="h-2 rounded-full bg-sidebar-accent">
+                <div
+                  className="h-2 rounded-full bg-yellow-500 transition-all"
+                  style={{
+                    width: `${gamification.xpForNextLevel > 0 ? (gamification.currentLevelXp / gamification.xpForNextLevel) * 100 : 0}%`,
+                  }}
+                />
+              </div>
+              <div className="text-xs text-sidebar-foreground/50">
+                {gamification.currentLevelXp} / {gamification.xpForNextLevel} XP
+                to next level
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       {recentCourses.length > 0 && (
         <div className="border-t border-sidebar-border p-3">

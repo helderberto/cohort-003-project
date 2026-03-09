@@ -72,6 +72,7 @@ import {
   getBookmarkedLessonIds,
   toggleBookmark,
 } from "~/services/bookmarkService";
+import { awardXp } from "~/services/xpService";
 
 const lessonParamsSchema = v.object({
   slug: v.pipe(v.string(), v.minLength(1)),
@@ -393,6 +394,7 @@ export async function action({ params, request }: Route.ActionArgs) {
 
   if (intent === "mark-complete") {
     markLessonComplete(currentUserId, lessonId);
+    awardXp(currentUserId, 10, "lesson_complete", lessonId);
     return { success: true };
   }
 

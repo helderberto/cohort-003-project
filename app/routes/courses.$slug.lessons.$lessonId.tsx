@@ -56,7 +56,7 @@ import { cn, formatDuration } from "~/lib/utils";
 import { renderMarkdown } from "~/lib/markdown.server";
 import { YouTubePlayer } from "~/components/youtube-player";
 import { data, isRouteErrorResponse } from "react-router";
-import { z } from "zod";
+import * as v from "valibot";
 import { resolveCountry } from "~/lib/country.server";
 import { checkPppAccess, COUNTRIES } from "~/lib/ppp";
 import { findPurchase } from "~/services/purchaseService";
@@ -76,37 +76,40 @@ import {
 } from "~/services/bookmarkService";
 import { Textarea } from "~/components/ui/textarea";
 
-const lessonParamsSchema = z.object({
-  slug: z.string().min(1),
-  lessonId: z.coerce.number().int(),
+const coerceInt = v.pipe(v.unknown(), v.transform(Number), v.integer());
+
+const lessonParamsSchema = v.object({
+  slug: v.pipe(v.string(), v.minLength(1)),
+  lessonId: coerceInt,
 });
 
-const markCompleteSchema = z.object({
-  intent: z.literal("mark-complete"),
+const markCompleteSchema = v.object({
+  intent: v.literal("mark-complete"),
 });
 
-const addCommentSchema = z.object({
-  intent: z.literal("add-comment"),
-  body: z.string().min(1).max(2000),
+const addCommentSchema = v.object({
+  intent: v.literal("add-comment"),
+  body: v.pipe(v.string(), v.minLength(1), v.maxLength(2000)),
 });
 
-const deleteCommentSchema = z.object({
-  intent: z.literal("delete-comment"),
-  commentId: z.coerce.number().int(),
+const deleteCommentSchema = v.object({
+  intent: v.literal("delete-comment"),
+  commentId: coerceInt,
 });
 
-const toggleCommentSchema = z.object({
-  intent: z.literal("toggle-comment-visibility"),
-  commentId: z.coerce.number().int(),
-  hidden: z
-    .enum(["true", "false"])
-    .transform((v) => v === "true"),
+const toggleCommentSchema = v.object({
+  intent: v.literal("toggle-comment-visibility"),
+  commentId: coerceInt,
+  hidden: v.pipe(
+    v.picklist(["true", "false"]),
+    v.transform((val) => val === "true")
+  ),
 });
 
-const editCommentSchema = z.object({
-  intent: z.literal("edit-comment"),
-  commentId: z.coerce.number().int(),
-  body: z.string().min(1).max(2000),
+const editCommentSchema = v.object({
+  intent: v.literal("edit-comment"),
+  commentId: coerceInt,
+  body: v.pipe(v.string(), v.minLength(1), v.maxLength(2000)),
 });
 
 export function meta({ data: loaderData }: Route.MetaArgs) {

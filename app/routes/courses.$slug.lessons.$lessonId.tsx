@@ -676,6 +676,7 @@ export default function LessonViewer({ loaderData }: Route.ComponentProps) {
                         : "text-muted-foreground",
                     )}
                   />
+                  {displayBookmarked ? "Bookmarked" : "Bookmark"}
                 </Button>
               </bookmarkFetcher.Form>
             )}

@@ -403,7 +403,28 @@ export async function action({ params, request }: Route.ActionArgs) {
     return { success: true };
   }
 
-  if (intent === "delete-comment" || intent === "toggle-comment-visibility") {
+  if (intent === "delete-comment") {
+    const parsed = parseFormData(formData, deleteCommentSchema);
+    if (!parsed.success) throw data("Invalid request", { status: 400 });
+    const comment = getCommentById(parsed.data.commentId);
+    if (!comment || comment.lessonId !== lessonId) {
+      throw data("Comment not found", { status: 404 });
+    }
+    const courseForAuth = getCourseBySlug(slug);
+    const courseDetails = courseForAuth
+      ? getCourseWithDetails(courseForAuth.id)
+      : null;
+    const isInstructorForDelete =
+      courseDetails?.instructorId === currentUserId;
+    const isAuthor = comment.userId === currentUserId;
+    if (!isInstructorForDelete && !isAuthor) {
+      throw data("Forbidden", { status: 403 });
+    }
+    deleteComment(parsed.data.commentId);
+    return { success: true };
+  }
+
+  if (intent === "toggle-comment-visibility") {
     const courseForAuth = getCourseBySlug(slug);
     if (!courseForAuth) {
       throw data("Course not found", { status: 404 });
@@ -412,17 +433,6 @@ export async function action({ params, request }: Route.ActionArgs) {
     const courseDetails = getCourseWithDetails(courseForAuth.id);
     if (!courseDetails || courseDetails.instructorId !== currentUserId) {
       throw data("Forbidden", { status: 403 });
-    }
-
-    if (intent === "delete-comment") {
-      const parsed = parseFormData(formData, deleteCommentSchema);
-      if (!parsed.success) throw data("Invalid request", { status: 400 });
-      const comment = getCommentById(parsed.data.commentId);
-      if (!comment || comment.lessonId !== lessonId) {
-        throw data("Comment not found", { status: 404 });
-      }
-      deleteComment(parsed.data.commentId);
-      return { success: true };
     }
 
     const parsed = parseFormData(formData, toggleCommentSchema);
@@ -1203,21 +1213,43 @@ function LessonComments({
                   </div>
 
                   <div className="flex items-center gap-1 shrink-0">
-                    {/* Edit button — only for the comment's own author */}
+                    {/* Edit/Delete buttons — only for the comment's own author */}
                     {comment.userId === currentUserId && !isInstructor && (
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        type="button"
-                        className="h-7 px-2 text-xs text-muted-foreground hover:text-foreground"
-                        onClick={() =>
-                          setEditingId(
-                            editingId === comment.id ? null : comment.id
-                          )
-                        }
-                      >
-                        <Pencil className="size-3.5" />
-                      </Button>
+                      <>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          type="button"
+                          className="h-7 px-2 text-xs text-muted-foreground hover:text-foreground"
+                          onClick={() =>
+                            setEditingId(
+                              editingId === comment.id ? null : comment.id
+                            )
+                          }
+                        >
+                          <Pencil className="size-3.5" />
+                        </Button>
+                        <commentFetcher.Form method="post">
+                          <input
+                            type="hidden"
+                            name="intent"
+                            value="delete-comment"
+                          />
+                          <input
+                            type="hidden"
+                            name="commentId"
+                            value={comment.id}
+                          />
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            type="submit"
+                            className="h-7 px-2 text-xs text-muted-foreground hover:text-destructive"
+                          >
+                            <Trash2 className="size-3.5" />
+                          </Button>
+                        </commentFetcher.Form>
+                      </>
                     )}
 
                     {isInstructor && (

@@ -8,7 +8,9 @@ import { Button } from "~/components/ui/button";
 import { Skeleton } from "~/components/ui/skeleton";
 import { AlertTriangle, BookOpen, CheckCircle2, GraduationCap, PlayCircle } from "lucide-react";
 import { CourseImage } from "~/components/course-image";
+import { StarRatingDisplay } from "~/components/star-rating";
 import { data, isRouteErrorResponse } from "react-router";
+import { getAverageRatings } from "~/services/reviewService";
 
 export function meta() {
   return [
@@ -28,6 +30,8 @@ export async function loader({ request }: Route.LoaderArgs) {
 
   const enrolledCourses = getUserEnrolledCourses(currentUserId);
 
+  const ratingsMap = getAverageRatings(enrolledCourses.map((e) => e.courseId));
+
   const coursesWithProgress = enrolledCourses.map((enrollment) => {
     const progress = calculateProgress(
       currentUserId,
@@ -45,6 +49,7 @@ export async function loader({ request }: Route.LoaderArgs) {
       enrollment.courseId
     );
     const isCompleted = enrollment.completedAt !== null;
+    const rating = ratingsMap.get(enrollment.courseId) ?? null;
 
     return {
       ...enrollment,
@@ -53,6 +58,8 @@ export async function loader({ request }: Route.LoaderArgs) {
       totalLessons,
       nextLessonId: nextLesson?.id ?? null,
       isCompleted,
+      averageRating: rating?.average ?? null,
+      ratingCount: rating?.count ?? null,
     };
   });
 
@@ -162,6 +169,14 @@ export default function Dashboard({ loaderData }: Route.ComponentProps) {
                       </p>
                     </CardHeader>
                     <CardContent className="flex-1">
+                      {course.averageRating !== null && course.ratingCount !== null && (
+                        <div className="mb-2">
+                          <StarRatingDisplay
+                            average={course.averageRating}
+                            count={course.ratingCount}
+                          />
+                        </div>
+                      )}
                       <div className="mb-2 flex items-center justify-between text-sm">
                         <span className="text-muted-foreground">
                           {course.completedLessons} / {course.totalLessons}{" "}
@@ -234,6 +249,14 @@ export default function Dashboard({ loaderData }: Route.ComponentProps) {
                       </p>
                     </CardHeader>
                     <CardContent className="flex-1">
+                      {course.averageRating !== null && course.ratingCount !== null && (
+                        <div className="mb-2">
+                          <StarRatingDisplay
+                            average={course.averageRating}
+                            count={course.ratingCount}
+                          />
+                        </div>
+                      )}
                       <div className="flex items-center gap-2 text-sm text-green-600">
                         <CheckCircle2 className="size-4" />
                         <span>

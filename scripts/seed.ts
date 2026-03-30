@@ -1727,6 +1727,25 @@ You've completed the Building REST APIs course. You now have the skills to build
     `Created 1 team with Bossy McBossface as admin, 1 team purchase, and ${seededCoupons.length} coupons (2 redeemed, 3 available).`
   );
 
+  // ─── Course Reviews ───
+  // Students who have progressed through courses leave star ratings
+
+  db.insert(schema.courseReviews)
+    .values([
+      // Course 1 reviews (avg ~4.25)
+      { userId: students[0].id, courseId: course1.id, rating: 5, createdAt: daysAgo(20) }, // Emma — nearly done, loves it
+      { userId: students[1].id, courseId: course1.id, rating: 4, createdAt: daysAgo(12) }, // James — completed, solid
+      { userId: students[2].id, courseId: course1.id, rating: 4, createdAt: daysAgo(25) }, // Olivia — just started but enjoying
+      { userId: students[4].id, courseId: course1.id, rating: 4, createdAt: daysAgo(10) }, // Sophia — barely started, positive
+      // Course 2 reviews (avg ~3.67)
+      { userId: students[0].id, courseId: course2.id, rating: 4, createdAt: daysAgo(18) }, // Emma — mid-way, good
+      { userId: students[2].id, courseId: course2.id, rating: 4, createdAt: daysAgo(15) }, // Olivia — mid-way, good
+      { userId: students[3].id, courseId: course2.id, rating: 3, createdAt: daysAgo(20) }, // Liam — abandoned, meh
+    ])
+    .run();
+
+  console.log("Created 7 course reviews.");
+
   console.log("\n✓ Seed complete!");
   console.log("  Users: 9 (1 admin, 2 instructors, 6 students)");
   console.log("  Categories: 5");

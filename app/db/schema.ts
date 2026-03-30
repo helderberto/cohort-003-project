@@ -253,6 +253,21 @@ export const courseReviews = sqliteTable("course_reviews", {
     .$defaultFn(() => new Date().toISOString()),
 });
 
+export const lessonComments = sqliteTable("lesson_comments", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  lessonId: integer("lesson_id")
+    .notNull()
+    .references(() => lessons.id),
+  userId: integer("user_id")
+    .notNull()
+    .references(() => users.id),
+  body: text("body").notNull(),
+  hidden: integer("hidden", { mode: "boolean" }).notNull().default(false),
+  createdAt: text("created_at")
+    .notNull()
+    .$defaultFn(() => new Date().toISOString()),
+});
+
 export const videoWatchEvents = sqliteTable("video_watch_events", {
   id: integer("id").primaryKey({ autoIncrement: true }),
   userId: integer("user_id")

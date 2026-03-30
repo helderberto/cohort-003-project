@@ -45,6 +45,8 @@ async function seed() {
 
   // Drop and recreate tables for a clean seed
   sqlite.exec(`
+    DROP TABLE IF EXISTS lesson_comments;
+    DROP TABLE IF EXISTS course_reviews;
     DROP TABLE IF EXISTS video_watch_events;
     DROP TABLE IF EXISTS quiz_answers;
     DROP TABLE IF EXISTS quiz_attempts;
@@ -1745,6 +1747,47 @@ You've completed the Building REST APIs course. You now have the skills to build
     .run();
 
   console.log("Created 7 course reviews.");
+
+  // ─── Lesson Comments ───
+  // Students discussing lessons; one hidden to demo moderation
+
+  db.insert(schema.lessonComments)
+    .values([
+      {
+        lessonId: course1LessonIds[0],
+        userId: students[0].id, // Emma
+        body: "Great intro! The comparison with plain JavaScript really helped it click for me.",
+        createdAt: daysAgo(48),
+      },
+      {
+        lessonId: course1LessonIds[0],
+        userId: students[1].id, // James
+        body: "Quick question: does TypeScript work with all Node.js frameworks or just specific ones?",
+        createdAt: daysAgo(43),
+      },
+      {
+        lessonId: course1LessonIds[0],
+        userId: students[2].id, // Olivia
+        body: "Spam or off-topic content — hidden by instructor.",
+        hidden: true,
+        createdAt: daysAgo(30),
+      },
+      {
+        lessonId: course2LessonIds[0],
+        userId: students[0].id, // Emma
+        body: "Loved the real-world analogy for REST. Made the stateless concept much clearer.",
+        createdAt: daysAgo(38),
+      },
+      {
+        lessonId: course2LessonIds[2] ?? course2LessonIds[0],
+        userId: students[3].id, // Liam
+        body: "Still confused about when to use 200 vs 204 — is there a rule of thumb?",
+        createdAt: daysAgo(21),
+      },
+    ])
+    .run();
+
+  console.log("Created 5 lesson comments (1 hidden).");
 
   console.log("\n✓ Seed complete!");
   console.log("  Users: 9 (1 admin, 2 instructors, 6 students)");

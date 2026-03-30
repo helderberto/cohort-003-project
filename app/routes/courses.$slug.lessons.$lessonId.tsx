@@ -37,11 +37,16 @@ import {
   ChevronRight,
   Circle,
   Clock,
+  Eye,
+  EyeOff,
   Github,
+  Pencil,
   HelpCircle,
   MapPin,
+  MessageSquare,
   PlayCircle,
   ShieldAlert,
+  Trash2,
   XCircle,
   Trophy,
   RotateCcw,
@@ -55,6 +60,15 @@ import { resolveCountry } from "~/lib/country.server";
 import { checkPppAccess, COUNTRIES } from "~/lib/ppp";
 import { findPurchase } from "~/services/purchaseService";
 import { parseFormData, parseParams } from "~/lib/validation";
+import {
+  getCommentsForLesson,
+  createComment,
+  editComment,
+  getCommentById,
+  deleteComment,
+  setCommentVisibility,
+} from "~/services/commentService";
+import { Textarea } from "~/components/ui/textarea";
 
 const lessonParamsSchema = z.object({
   slug: z.string().min(1),
@@ -63,6 +77,30 @@ const lessonParamsSchema = z.object({
 
 const markCompleteSchema = z.object({
   intent: z.literal("mark-complete"),
+});
+
+const addCommentSchema = z.object({
+  intent: z.literal("add-comment"),
+  body: z.string().min(1).max(2000),
+});
+
+const deleteCommentSchema = z.object({
+  intent: z.literal("delete-comment"),
+  commentId: z.coerce.number().int(),
+});
+
+const toggleCommentSchema = z.object({
+  intent: z.literal("toggle-comment-visibility"),
+  commentId: z.coerce.number().int(),
+  hidden: z
+    .enum(["true", "false"])
+    .transform((v) => v === "true"),
+});
+
+const editCommentSchema = z.object({
+  intent: z.literal("edit-comment"),
+  commentId: z.coerce.number().int(),
+  body: z.string().min(1).max(2000),
 });
 
 export function meta({ data: loaderData }: Route.MetaArgs) {
@@ -191,6 +229,12 @@ export async function loader({ params, request }: Route.LoaderArgs) {
     pppPurchaseCountry = pppResult.purchaseCountry;
   }
 
+  const isInstructor = currentUserId === courseWithDetails.instructorId;
+  const comments =
+    enrolled || isInstructor
+      ? getCommentsForLesson(lessonId, isInstructor)
+      : [];
+
   // Render lesson content from Markdown to HTML server-side
   const contentHtml = lesson.content
     ? await renderMarkdown(lesson.content)
@@ -281,6 +325,8 @@ export async function loader({ params, request }: Route.LoaderArgs) {
     pppBlocked,
     pppBlockedCountry,
     pppPurchaseCountry,
+    isInstructor,
+    comments,
   };
 }
 
@@ -329,6 +375,64 @@ export async function action({ params, request }: Route.ActionArgs) {
     }
 
     return { quizResult: result };
+  }
+
+  if (intent === "add-comment") {
+    if (!isUserEnrolled(currentUserId, course.id)) {
+      throw data("You must be enrolled to comment", { status: 403 });
+    }
+    const parsed = parseFormData(formData, addCommentSchema);
+    if (!parsed.success) {
+      throw data("Invalid comment", { status: 400 });
+    }
+    createComment(lessonId, currentUserId, parsed.data.body);
+    return { success: true };
+  }
+
+  if (intent === "edit-comment") {
+    const parsed = parseFormData(formData, editCommentSchema);
+    if (!parsed.success) throw data("Invalid request", { status: 400 });
+    const comment = getCommentById(parsed.data.commentId);
+    if (!comment || comment.lessonId !== lessonId) {
+      throw data("Comment not found", { status: 404 });
+    }
+    if (comment.userId !== currentUserId) {
+      throw data("Forbidden", { status: 403 });
+    }
+    editComment(parsed.data.commentId, parsed.data.body);
+    return { success: true };
+  }
+
+  if (intent === "delete-comment" || intent === "toggle-comment-visibility") {
+    const courseForAuth = getCourseBySlug(slug);
+    if (!courseForAuth) {
+      throw data("Course not found", { status: 404 });
+    }
+    // Must be the course instructor
+    const courseDetails = getCourseWithDetails(courseForAuth.id);
+    if (!courseDetails || courseDetails.instructorId !== currentUserId) {
+      throw data("Forbidden", { status: 403 });
+    }
+
+    if (intent === "delete-comment") {
+      const parsed = parseFormData(formData, deleteCommentSchema);
+      if (!parsed.success) throw data("Invalid request", { status: 400 });
+      const comment = getCommentById(parsed.data.commentId);
+      if (!comment || comment.lessonId !== lessonId) {
+        throw data("Comment not found", { status: 404 });
+      }
+      deleteComment(parsed.data.commentId);
+      return { success: true };
+    }
+
+    const parsed = parseFormData(formData, toggleCommentSchema);
+    if (!parsed.success) throw data("Invalid request", { status: 400 });
+    const comment = getCommentById(parsed.data.commentId);
+    if (!comment || comment.lessonId !== lessonId) {
+      throw data("Comment not found", { status: 404 });
+    }
+    setCommentVisibility(parsed.data.commentId, parsed.data.hidden);
+    return { success: true };
   }
 
   throw data("Invalid action", { status: 400 });
@@ -382,10 +486,13 @@ export default function LessonViewer({ loaderData }: Route.ComponentProps) {
     pppBlocked,
     pppBlockedCountry,
     pppPurchaseCountry,
+    isInstructor,
+    comments,
   } = loaderData;
   const [autoplay, toggleAutoplay] = useAutoplay();
   const fetcher = useFetcher({ key: `mark-complete-${lesson.id}` });
   const quizFetcher = useFetcher({ key: `quiz-${lesson.id}` });
+  const commentFetcher = useFetcher({ key: `comments-${lesson.id}` });
   const navigate = useNavigate();
 
   const isMarking =
@@ -543,6 +650,16 @@ export default function LessonViewer({ loaderData }: Route.ComponentProps) {
               quizResult={quizResult}
               quizFetcher={quizFetcher}
               isSubmitting={isSubmittingQuiz}
+            />
+          )}
+
+          {/* Discussion / Comments */}
+          {(enrolled || isInstructor) && (
+            <LessonComments
+              comments={comments}
+              currentUserId={currentUserId}
+              isInstructor={isInstructor}
+              commentFetcher={commentFetcher}
             />
           )}
 
@@ -1009,6 +1126,229 @@ function QuizSection({
             )}
           </div>
         </quizFetcher.Form>
+      </CardContent>
+    </Card>
+  );
+}
+
+type Comment = {
+  id: number;
+  body: string;
+  hidden: boolean;
+  createdAt: string;
+  userId: number;
+  userName: string;
+  userAvatarUrl: string | null;
+};
+
+function LessonComments({
+  comments,
+  currentUserId,
+  isInstructor,
+  commentFetcher,
+}: {
+  comments: Comment[];
+  currentUserId: number | null;
+  isInstructor: boolean;
+  commentFetcher: ReturnType<typeof useFetcher>;
+}) {
+  const [editingId, setEditingId] = useState<number | null>(null);
+
+  // Close edit form after successful submission
+  useEffect(() => {
+    const fetcherData = commentFetcher.data as { success?: boolean } | undefined;
+    if (commentFetcher.state === "idle" && fetcherData?.success) {
+      setEditingId(null);
+    }
+  }, [commentFetcher.state, commentFetcher.data]);
+
+  return (
+    <Card className="mb-8">
+      <CardContent className="p-6">
+        <div className="mb-4 flex items-center gap-2">
+          <MessageSquare className="size-5 text-primary" />
+          <h2 className="text-xl font-semibold">
+            Discussion ({comments.length})
+          </h2>
+        </div>
+
+        {comments.length > 0 ? (
+          <div className="space-y-4 mb-6">
+            {comments.map((comment) => (
+              <div
+                key={comment.id}
+                className={cn(
+                  "rounded-lg border p-4",
+                  comment.hidden && "opacity-50"
+                )}
+              >
+                <div className="mb-2 flex items-start justify-between gap-2">
+                  <div className="flex items-center gap-2">
+                    <div className="flex size-8 shrink-0 items-center justify-center rounded-full bg-primary/10 text-sm font-medium text-primary">
+                      {comment.userName.charAt(0).toUpperCase()}
+                    </div>
+                    <div>
+                      <span className="text-sm font-medium">
+                        {comment.userName}
+                      </span>
+                      <span className="ml-2 text-xs text-muted-foreground">
+                        {new Date(comment.createdAt).toLocaleDateString()}
+                      </span>
+                    </div>
+                    {comment.hidden && isInstructor && (
+                      <span className="rounded border px-1.5 py-0.5 text-xs text-muted-foreground">
+                        Hidden
+                      </span>
+                    )}
+                  </div>
+
+                  <div className="flex items-center gap-1 shrink-0">
+                    {/* Edit button — only for the comment's own author */}
+                    {comment.userId === currentUserId && !isInstructor && (
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        type="button"
+                        className="h-7 px-2 text-xs text-muted-foreground hover:text-foreground"
+                        onClick={() =>
+                          setEditingId(
+                            editingId === comment.id ? null : comment.id
+                          )
+                        }
+                      >
+                        <Pencil className="size-3.5" />
+                      </Button>
+                    )}
+
+                    {isInstructor && (
+                      <>
+                        <commentFetcher.Form method="post">
+                          <input
+                            type="hidden"
+                            name="intent"
+                            value="toggle-comment-visibility"
+                          />
+                          <input
+                            type="hidden"
+                            name="commentId"
+                            value={comment.id}
+                          />
+                          <input
+                            type="hidden"
+                            name="hidden"
+                            value={String(!comment.hidden)}
+                          />
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            type="submit"
+                            className="h-7 px-2 text-xs text-muted-foreground hover:text-foreground"
+                          >
+                            {comment.hidden ? (
+                              <Eye className="size-3.5" />
+                            ) : (
+                              <EyeOff className="size-3.5" />
+                            )}
+                          </Button>
+                        </commentFetcher.Form>
+
+                        <commentFetcher.Form method="post">
+                          <input
+                            type="hidden"
+                            name="intent"
+                            value="delete-comment"
+                          />
+                          <input
+                            type="hidden"
+                            name="commentId"
+                            value={comment.id}
+                          />
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            type="submit"
+                            className="h-7 px-2 text-xs text-muted-foreground hover:text-destructive"
+                          >
+                            <Trash2 className="size-3.5" />
+                          </Button>
+                        </commentFetcher.Form>
+                      </>
+                    )}
+                  </div>
+                </div>
+
+                {editingId === comment.id ? (
+                  <commentFetcher.Form
+                    method="post"
+                    className="ml-10 space-y-2"
+                  >
+                    <input type="hidden" name="intent" value="edit-comment" />
+                    <input
+                      type="hidden"
+                      name="commentId"
+                      value={comment.id}
+                    />
+                    <Textarea
+                      name="body"
+                      defaultValue={comment.body}
+                      maxLength={2000}
+                      rows={3}
+                      required
+                      autoFocus
+                    />
+                    <div className="flex gap-2">
+                      <Button
+                        type="submit"
+                        size="sm"
+                        disabled={commentFetcher.state !== "idle"}
+                      >
+                        {commentFetcher.state !== "idle"
+                          ? "Saving..."
+                          : "Save"}
+                      </Button>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        onClick={() => setEditingId(null)}
+                      >
+                        Cancel
+                      </Button>
+                    </div>
+                  </commentFetcher.Form>
+                ) : (
+                  <p className="text-sm text-foreground/90 ml-10">
+                    {comment.body}
+                  </p>
+                )}
+              </div>
+            ))}
+          </div>
+        ) : (
+          <p className="mb-6 text-sm text-muted-foreground">
+            No comments yet. Be the first to start the discussion!
+          </p>
+        )}
+
+        {!isInstructor && currentUserId && (
+          <commentFetcher.Form method="post" className="space-y-3">
+            <input type="hidden" name="intent" value="add-comment" />
+            <Textarea
+              name="body"
+              placeholder="Ask a question or leave a comment..."
+              maxLength={2000}
+              rows={3}
+              required
+            />
+            <Button
+              type="submit"
+              disabled={commentFetcher.state !== "idle"}
+              size="sm"
+            >
+              {commentFetcher.state !== "idle" ? "Posting..." : "Post Comment"}
+            </Button>
+          </commentFetcher.Form>
+        )}
       </CardContent>
     </Card>
   );

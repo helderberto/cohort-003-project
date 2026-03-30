@@ -29,7 +29,15 @@ export function getCommentsForLesson(lessonId: number, includeHidden: boolean) {
     .all();
 }
 
-export function createComment(lessonId: number, userId: number, body: string) {
+export function createComment({
+  lessonId,
+  userId,
+  body,
+}: {
+  lessonId: number;
+  userId: number;
+  body: string;
+}) {
   return db
     .insert(lessonComments)
     .values({ lessonId, userId, body })

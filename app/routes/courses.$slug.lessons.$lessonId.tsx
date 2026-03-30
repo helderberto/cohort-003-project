@@ -404,7 +404,7 @@ export async function action({ params, request }: Route.ActionArgs) {
     if (!parsed.success) {
       throw data("Invalid comment", { status: 400 });
     }
-    createComment(lessonId, currentUserId, parsed.data.body);
+    createComment({ lessonId, userId: currentUserId, body: parsed.data.body });
     return { success: true };
   }
 

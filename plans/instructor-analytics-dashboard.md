@@ -6,14 +6,14 @@
 
 Durable decisions that apply across all phases:
 
-- **Routes**: `/instructor` (updated with overview analytics), `/instructor/:courseId/analytics` (new). Time range via `?range=30d|90d|all` search param.
+- **Routes**: `/instructor` (updated with overview analytics), `/instructor/:courseId/analytics` (new). Time range via `?range=7d|30d|12m|all` search param.
 - **Schema**: No changes. All data exists in `purchases`, `enrollments`, `lessonProgress`, `quizAttempts`, `modules`, `lessons`, `users`.
 - **Service**: `analyticsService.ts` + `analyticsService.test.ts` in `app/services/`. Single source of truth for all analytics queries -- no SQL in route loaders.
-- **Time range**: Route layer converts `?range=` to `{ from, to }` Date params before calling service functions. `from`/`to` are optional, default to all time.
+- **Time range**: Route layer converts `?range=7d|30d|12m|all` to `{ from, to }` Date params before calling service functions. `from`/`to` are optional, default to all time.
 - **Definitions**: Completion = `enrollments.completedAt IS NOT NULL` / total enrolled. Drop-off = zero `lessonProgress` records for a lesson. Quiz pass rate = latest attempt per student per quiz.
 - **Charts**: Client-side (Recharts). Server returns pre-aggregated `{ date: string, value: number }[]`.
 - **Money**: `purchases.pricePaid` is cents -- convert to currency units before display.
-- **Navigation**: Add "Analytics" tab to the existing `Tabs` component in `instructor.$courseId.tsx` (links to `/instructor/:courseId/analytics`).
+- **Navigation**: Add "Analytics" tab to the existing `Tabs` component in `instructor.$courseId.tsx` (links to `/instructor/:courseId/analytics`). This is a new dedicated tab.
 - **Route file**: New route registered in `app/routes.ts` as `instructor.$courseId.analytics.tsx`.
 - **Params convention**: Functions with multiple same-type params use object params per CLAUDE.md.
 - **Test pattern**: Mock `~/db`, use `createTestDb()` + `seedBaseData()`, test against in-memory SQLite.
@@ -28,7 +28,7 @@ Durable decisions that apply across all phases:
 
 Create `analyticsService` with `getInstructorOverview({ instructorId, from, to })` returning total revenue, total enrollments, average completion rate, and a per-course breakdown (courseId, title, revenue, enrollments). Write full tests for this function: empty state, filtered vs unfiltered, date boundaries, multi-course isolation.
 
-Update the `/instructor` route loader to call `getInstructorOverview` with the `?range=` param converted to dates. Render an analytics summary section above the existing course grid: three stat cards (revenue, enrollments, avg completion rate) and a per-course breakdown table. Add a time-range selector (30d / 90d / all) that resubmits the loader. Each course row links to `/instructor/:courseId/analytics`.
+Update the `/instructor` route loader to call `getInstructorOverview` with the `?range=` param converted to dates. Render an analytics summary section above the existing course grid: three stat cards (revenue, enrollments, avg completion rate) and a per-course breakdown table. Add a time-range selector (7d / 30d / 12m / all) that resubmits the loader. Each course row links to `/instructor/:courseId/analytics`.
 
 ### Done when
 
@@ -55,7 +55,7 @@ Create `instructor.$courseId.analytics.tsx` route. Register in `app/routes.ts`. 
 - Stat cards (revenue, enrollments, completion rate) at the top
 - Revenue over-time chart (Recharts) + sortable transaction table (date, student, email, amount, country)
 - Enrollment over-time chart
-- Time-range selector (30d / 90d / all)
+- Time-range selector (7d / 30d / 12m / all)
 
 Add "Analytics" link/tab to the instructor course navigation in `instructor.$courseId.tsx`.
 

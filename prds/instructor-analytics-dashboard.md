@@ -8,7 +8,7 @@ Instructors have no visibility into how their courses are performing. They canno
 
 Provide instructors with two analytics surfaces:
 
-1. **Overview metrics on the existing `/instructor` page** — a summary across all their courses (total revenue, total enrollments, average completion rate) with a time filter and per-course breakdown.
+1. **A dedicated analytics overview page at `/instructor/analytics`** — a summary across all their courses (total revenue, total enrollments, average completion rate) with a time filter and per-course breakdown. Accessible via an "Analytics" tab in the instructor navigation.
 2. **A dedicated per-course analytics page at `/instructor/:courseId/analytics`** — deep metrics for a single course including revenue charts and transactions, enrollment trends, completion rate, quiz pass rates per module, and a lesson-level drop-off funnel.
 
 All metrics are filterable by time range: last 7 days, last 30 days, last 12 months, or all time (driven by a `?range=7d|30d|12m|all` URL search param).
@@ -49,13 +49,16 @@ All metrics are filterable by time range: last 7 days, last 30 days, last 12 mon
   - `getLessonDropoff({ courseId })` → ordered list of lessons with % of enrolled students who never started (no time filter — drop-off is structural)
   - All `from`/`to` parameters are optional and default to all time
 
-- **`/instructor` route update** — Add overview analytics section above the course list. Fetch via server loader using `getInstructorOverview`. Include a time-range selector (7d / 30d / 12m / all) that resubmits the loader via `?range=` search param.
+- **`/instructor/analytics` route (new)** — Instructor analytics overview page. Fetch via server loader using `getInstructorOverview`. Renders: stat cards (revenue, enrollments, avg completion rate), per-course breakdown table. Include a time-range selector (7d / 30d / 12m / all) that resubmits the loader via `?range=` search param. Add an "Analytics" tab to the instructor top-level navigation.
 
 - **`/instructor/:courseId/analytics` route (new)** — Per-course analytics page. Single server loader call. Renders: stat cards, revenue chart + transaction table, enrollment chart, completion rate stat, module quiz pass rate table, lesson drop-off funnel chart. Add an "Analytics" tab to the per-course instructor navigation as a new dedicated tab.
+
+- **`/instructor` route** — No changes. The My Courses page remains a course grid with no analytics.
 
 ### Architectural Decisions
 
 - `analyticsService` is the single source of truth for analytics queries — no analytics SQL lives in route loaders directly.
+- The `/instructor` (My Courses) page has no analytics — it remains a simple course grid.
 - Time range filtering uses `from`/`to` Date parameters in service functions; the route layer converts `?range=7d|30d|12m|all` to concrete dates before calling services.
 - **Drop-off definition**: a student is dropped off at lesson N if they have zero `lessonProgress` records for that lesson (never started). Lessons ordered by module position, then lesson position.
 - **Completion rate definition**: enrolled students with `enrollments.completedAt IS NOT NULL` divided by total enrolled.
@@ -109,4 +112,4 @@ None required. All data exists in `purchases`, `enrollments`, `lessonProgress`, 
 ## Further Notes
 
 - The drop-off funnel does not support time filtering — it reflects the cumulative structural drop-off across all enrolled students regardless of when they enrolled.
-- The `/instructor` overview page change should be additive — no existing course list functionality should be removed or disrupted.
+- The `/instructor` (My Courses) page is not modified — analytics live on the separate `/instructor/analytics` page.

@@ -6,35 +6,47 @@
 
 Durable decisions that apply across all phases:
 
-- **Routes**: `/instructor` (updated with overview analytics), `/instructor/:courseId/analytics` (new). Time range via `?range=7d|30d|12m|all` search param.
+- **Routes**: `/instructor/analytics` (new overview page), `/instructor/:courseId/analytics` (new per-course page). Time range via `?range=7d|30d|12m|all` search param.
 - **Schema**: No changes. All data exists in `purchases`, `enrollments`, `lessonProgress`, `quizAttempts`, `modules`, `lessons`, `users`.
 - **Service**: `analyticsService.ts` + `analyticsService.test.ts` in `app/services/`. Single source of truth for all analytics queries -- no SQL in route loaders.
 - **Time range**: Route layer converts `?range=7d|30d|12m|all` to `{ from, to }` Date params before calling service functions. `from`/`to` are optional, default to all time.
 - **Definitions**: Completion = `enrollments.completedAt IS NOT NULL` / total enrolled. Drop-off = zero `lessonProgress` records for a lesson. Quiz pass rate = latest attempt per student per quiz.
 - **Charts**: Client-side (Recharts). Server returns pre-aggregated `{ date: string, value: number }[]`.
 - **Money**: `purchases.pricePaid` is cents -- convert to currency units before display.
-- **Navigation**: Add "Analytics" tab to the existing `Tabs` component in `instructor.$courseId.tsx` (links to `/instructor/:courseId/analytics`). This is a new dedicated tab.
-- **Route file**: New route registered in `app/routes.ts` as `instructor.$courseId.analytics.tsx`.
+- **Navigation**: Add "Analytics" tab to the instructor top-level navigation (links to `/instructor/analytics`). Add "Analytics" tab to the existing `Tabs` component in `instructor.$courseId.tsx` (links to `/instructor/:courseId/analytics`).
+- **Route files**: `instructor.analytics.tsx` (overview) and `instructor.$courseId.analytics.tsx` (per-course), both registered in `app/routes.ts`.
+- **My Courses page**: `/instructor` remains unchanged -- no analytics on this page. It only shows the course grid.
 - **Params convention**: Functions with multiple same-type params use object params per CLAUDE.md.
 - **Test pattern**: Mock `~/db`, use `createTestDb()` + `seedBaseData()`, test against in-memory SQLite.
 
 ---
 
-## Phase 1 -- Instructor overview shows course performance
+## Phase 1 -- Instructor analytics overview page
 
 **User stories**: 1, 2, 3, 4, 5, 6
+
+### Cleanup: remove existing overview from `/instructor`
+
+The previous implementation added analytics (stat cards, per-course breakdown table, time filter) directly to the `/instructor` (My Courses) route. This must be removed first. The simplest approach is to revert the related commits (`6849477` and `28f4964`) that added the overview to `instructor.tsx`, then verify the page is back to a clean course grid.
 
 ### What to build
 
 Create `analyticsService` with `getInstructorOverview({ instructorId, from, to })` returning total revenue, total enrollments, average completion rate, and a per-course breakdown (courseId, title, revenue, enrollments). Write full tests for this function: empty state, filtered vs unfiltered, date boundaries, multi-course isolation.
 
-Update the `/instructor` route loader to call `getInstructorOverview` with the `?range=` param converted to dates. Render an analytics summary section above the existing course grid: three stat cards (revenue, enrollments, avg completion rate) and a per-course breakdown table. Add a time-range selector (7d / 30d / 12m / all) that resubmits the loader. Each course row links to `/instructor/:courseId/analytics`.
+Create a new `instructor.analytics.tsx` route at `/instructor/analytics`. Register in `app/routes.ts`. Loader calls `getInstructorOverview` with the `?range=` param converted to dates. Render three stat cards (revenue, enrollments, avg completion rate), a per-course breakdown table, and a time-range selector (7d / 30d / 12m / all) that resubmits the loader. Each course row links to `/instructor/:courseId/analytics`.
+
+Add an "Analytics" tab to the instructor top-level navigation linking to `/instructor/analytics`.
+
+The `/instructor` (My Courses) page must have **no analytics** -- it only shows the course grid.
 
 ### Done when
 
+- Previous analytics overview removed from `/instructor` route (loader no longer calls `getInstructorOverview`, template has no stat cards or breakdown table).
 - `analyticsService.getInstructorOverview` returns correct aggregates; tests pass for empty state, date filtering, boundary conditions, and multi-course instructor.
-- `/instructor` page renders stat cards and per-course breakdown with working time filter.
+- `/instructor/analytics` page renders stat cards and per-course breakdown with working time filter.
+- "Analytics" tab visible in instructor navigation.
 - Course rows link to the (not yet built) per-course analytics page.
+- `/instructor` (My Courses) page is a clean course grid with no analytics.
 
 ---
 

@@ -76,14 +76,18 @@ export async function loader({ params, request }: Route.LoaderArgs) {
   const range = url.searchParams.get("range") || "all";
 
   let from: Date | undefined;
+  let to: Date | undefined;
   const now = new Date();
-  if (range === "30d") {
+  if (range === "7d") {
+    from = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+    to = now;
+  } else if (range === "30d") {
     from = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
-  } else if (range === "90d") {
-    from = new Date(now.getTime() - 90 * 24 * 60 * 60 * 1000);
+    to = now;
+  } else if (range === "12m") {
+    from = new Date(now.getTime() - 365 * 24 * 60 * 60 * 1000);
+    to = now;
   }
-
-  const to = from ? now : undefined;
 
   const revenue = getCourseRevenueSummary({ courseId, from, to });
   const enrollment = getCourseEnrollmentSummary({ courseId, from, to });
@@ -157,8 +161,9 @@ export default function CourseAnalytics({ loaderData }: Route.ComponentProps) {
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
+            <SelectItem value="7d">Last 7 days</SelectItem>
             <SelectItem value="30d">Last 30 days</SelectItem>
-            <SelectItem value="90d">Last 90 days</SelectItem>
+            <SelectItem value="12m">Last 12 months</SelectItem>
             <SelectItem value="all">All time</SelectItem>
           </SelectContent>
         </Select>

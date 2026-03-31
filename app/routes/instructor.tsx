@@ -1,21 +1,13 @@
-import { Link, useSearchParams } from "react-router";
+import { Link } from "react-router";
 import type { Route } from "./+types/instructor";
 import { getCoursesByInstructor, getLessonCountForCourse } from "~/services/courseService";
 import { getEnrollmentCountForCourse } from "~/services/enrollmentService";
-import { getInstructorOverview } from "~/services/analyticsService";
 import { getCurrentUserId } from "~/lib/session";
 import { getUserById } from "~/services/userService";
 import { Card, CardContent, CardFooter, CardHeader } from "~/components/ui/card";
 import { Button } from "~/components/ui/button";
 import { Skeleton } from "~/components/ui/skeleton";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "~/components/ui/select";
-import { AlertTriangle, BarChart3, BookOpen, DollarSign, GraduationCap, Plus, TrendingUp, Users } from "lucide-react";
+import { AlertTriangle, BookOpen, GraduationCap, Plus, Users } from "lucide-react";
 import { CourseImage } from "~/components/course-image";
 import { data, isRouteErrorResponse } from "react-router";
 import { CourseStatus, UserRole } from "~/db/schema";
@@ -44,23 +36,6 @@ export async function loader({ request }: Route.LoaderArgs) {
     });
   }
 
-  const url = new URL(request.url);
-  const range = url.searchParams.get("range") || "all";
-
-  let from: Date | undefined;
-  const now = new Date();
-  if (range === "30d") {
-    from = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
-  } else if (range === "90d") {
-    from = new Date(now.getTime() - 90 * 24 * 60 * 60 * 1000);
-  }
-
-  const overview = getInstructorOverview({
-    instructorId: currentUserId,
-    from,
-    to: from ? now : undefined,
-  });
-
   const instructorCourses = getCoursesByInstructor(currentUserId);
 
   const coursesWithStats = instructorCourses.map((course) => {
@@ -81,7 +56,7 @@ export async function loader({ request }: Route.LoaderArgs) {
     };
   });
 
-  return { courses: coursesWithStats, overview, range };
+  return { courses: coursesWithStats };
 }
 
 function statusBadge(status: string) {
@@ -143,19 +118,10 @@ export function HydrateFallback() {
   );
 }
 
-function formatCurrency(cents: number) {
-  return `$${(cents / 100).toFixed(2)}`;
-}
-
 export default function InstructorDashboard({
   loaderData,
 }: Route.ComponentProps) {
-  const { courses, overview, range } = loaderData;
-  const [, setSearchParams] = useSearchParams();
-
-  function handleRangeChange(value: string) {
-    setSearchParams(value === "all" ? {} : { range: value });
-  }
+  const { courses } = loaderData;
 
   return (
     <div className="mx-auto max-w-7xl p-6 lg:p-8">
@@ -182,98 +148,6 @@ export default function InstructorDashboard({
           </Button>
         </Link>
       </div>
-
-      {/* Analytics Overview */}
-      <section className="mb-10">
-        <div className="mb-4 flex items-center justify-between">
-          <h2 className="text-xl font-semibold">Overview</h2>
-          <Select value={range} onValueChange={handleRangeChange}>
-            <SelectTrigger>
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="30d">Last 30 days</SelectItem>
-              <SelectItem value="90d">Last 90 days</SelectItem>
-              <SelectItem value="all">All time</SelectItem>
-            </SelectContent>
-          </Select>
-        </div>
-
-        <div className="mb-6 grid gap-4 sm:grid-cols-3">
-          <Card>
-            <CardContent className="flex items-center gap-3 pt-6">
-              <div className="rounded-md bg-green-100 p-2 dark:bg-green-900/30">
-                <DollarSign className="size-5 text-green-700 dark:text-green-400" />
-              </div>
-              <div>
-                <p className="text-sm text-muted-foreground">Total Revenue</p>
-                <p className="text-2xl font-bold">{formatCurrency(overview.totalRevenue)}</p>
-              </div>
-            </CardContent>
-          </Card>
-          <Card>
-            <CardContent className="flex items-center gap-3 pt-6">
-              <div className="rounded-md bg-blue-100 p-2 dark:bg-blue-900/30">
-                <Users className="size-5 text-blue-700 dark:text-blue-400" />
-              </div>
-              <div>
-                <p className="text-sm text-muted-foreground">Total Enrollments</p>
-                <p className="text-2xl font-bold">{overview.totalEnrollments}</p>
-              </div>
-            </CardContent>
-          </Card>
-          <Card>
-            <CardContent className="flex items-center gap-3 pt-6">
-              <div className="rounded-md bg-purple-100 p-2 dark:bg-purple-900/30">
-                <TrendingUp className="size-5 text-purple-700 dark:text-purple-400" />
-              </div>
-              <div>
-                <p className="text-sm text-muted-foreground">Avg Completion Rate</p>
-                <p className="text-2xl font-bold">{overview.avgCompletionRate}%</p>
-              </div>
-            </CardContent>
-          </Card>
-        </div>
-
-        {overview.courses.length > 0 && (
-          <Card>
-            <CardHeader>
-              <h3 className="text-sm font-medium text-muted-foreground">Per-Course Breakdown</h3>
-            </CardHeader>
-            <CardContent>
-              <div className="overflow-x-auto">
-                <table className="w-full text-sm">
-                  <thead>
-                    <tr className="border-b text-left text-muted-foreground">
-                      <th className="pb-2 font-medium">Course</th>
-                      <th className="pb-2 text-right font-medium">Revenue</th>
-                      <th className="pb-2 text-right font-medium">Enrollments</th>
-                      <th className="pb-2 text-right font-medium" />
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {overview.courses.map((c) => (
-                      <tr key={c.courseId} className="border-b last:border-0">
-                        <td className="py-2.5">{c.title}</td>
-                        <td className="py-2.5 text-right">{formatCurrency(c.revenue)}</td>
-                        <td className="py-2.5 text-right">{c.enrollments}</td>
-                        <td className="py-2.5 text-right">
-                          <Link
-                            to={`/instructor/${c.courseId}/analytics`}
-                            className="text-primary hover:underline"
-                          >
-                            <BarChart3 className="inline size-4" />
-                          </Link>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            </CardContent>
-          </Card>
-        )}
-      </section>
 
       {courses.length === 0 ? (
         <div className="flex flex-col items-center justify-center py-16 text-center">

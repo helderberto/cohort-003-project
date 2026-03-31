@@ -1,191 +1,108 @@
-# Instructor Analytics Dashboard — Implementation Plan
+# Plan: Instructor Analytics Dashboard
 
-PRD: `prds/instructor-analytics-dashboard.md`
+> Source PRD: `prds/instructor-analytics-dashboard.md`
 
----
+## Architectural decisions
 
-## Step 1: Install recharts
+Durable decisions that apply across all phases:
 
-Add `recharts` for client-side charting. No other deps needed.
-
-```sh
-pnpm add recharts
-```
-
-**Verify:** `pnpm ls recharts` shows installed version.
-
----
-
-## Step 2: `analyticsService` — tests first (red)
-
-Create `app/services/analyticsService.test.ts` with tests for all six functions:
-
-- `getInstructorOverview`
-- `getCourseRevenueSummary`
-- `getCourseEnrollmentSummary`
-- `getCourseCompletionRate`
-- `getModuleQuizPassRates`
-- `getLessonDropoff`
-
-Follow existing test patterns: `createTestDb()` + `seedBaseData()` from `app/test/setup.ts`. Seed purchases, enrollments, lessonProgress, quizAttempts per test.
-
-**Test cases per PRD:**
-- Empty state (no purchases, no enrollments)
-- Filtered vs. unfiltered results (from/to dates)
-- Date boundary conditions (purchase exactly on `from`/`to`)
-- Multi-course instructor (per-course isolation)
-- Completion rate with partial completions
-- Quiz pass rate using latest-attempt-per-student logic
-- Drop-off ordering (module position, then lesson position)
-
-**Verify:** All tests fail (red). `pnpm vitest run app/services/analyticsService.test.ts`
+- **Routes**: `/instructor` (updated with overview analytics), `/instructor/:courseId/analytics` (new). Time range via `?range=30d|90d|all` search param.
+- **Schema**: No changes. All data exists in `purchases`, `enrollments`, `lessonProgress`, `quizAttempts`, `modules`, `lessons`, `users`.
+- **Service**: `analyticsService.ts` + `analyticsService.test.ts` in `app/services/`. Single source of truth for all analytics queries -- no SQL in route loaders.
+- **Time range**: Route layer converts `?range=` to `{ from, to }` Date params before calling service functions. `from`/`to` are optional, default to all time.
+- **Definitions**: Completion = `enrollments.completedAt IS NOT NULL` / total enrolled. Drop-off = zero `lessonProgress` records for a lesson. Quiz pass rate = latest attempt per student per quiz.
+- **Charts**: Client-side (Recharts). Server returns pre-aggregated `{ date: string, value: number }[]`.
+- **Money**: `purchases.pricePaid` is cents -- convert to currency units before display.
+- **Navigation**: Add "Analytics" tab to the existing `Tabs` component in `instructor.$courseId.tsx` (links to `/instructor/:courseId/analytics`).
+- **Route file**: New route registered in `app/routes.ts` as `instructor.$courseId.analytics.tsx`.
+- **Params convention**: Functions with multiple same-type params use object params per CLAUDE.md.
+- **Test pattern**: Mock `~/db`, use `createTestDb()` + `seedBaseData()`, test against in-memory SQLite.
 
 ---
 
-## Step 3: `analyticsService` — implementation (green)
+## Phase 1 -- Instructor overview shows course performance
 
-Create `app/services/analyticsService.ts` with all six functions. All use object params per CLAUDE.md convention.
+**User stories**: 1, 2, 3, 4, 5, 6
 
-**Key implementation details:**
-- `pricePaid` is in cents — service returns cents, route/UI converts
-- Revenue = `purchases` table; enrollments = `enrollments` table (separate)
-- Completion = `enrollments.completedAt IS NOT NULL / total enrolled`
-- Quiz pass rate = latest attempt per student per quiz (group by userId+quizId, max attemptedAt)
-- Drop-off = no `lessonProgress` record for a lesson; no time filter
-- Charts need `{ date: string, value: number }[]` grouped by day or week
-- `from`/`to` optional, default to all time
+### What to build
 
-**Verify:** All tests pass (green). `pnpm vitest run app/services/analyticsService.test.ts`
+Create `analyticsService` with `getInstructorOverview({ instructorId, from, to })` returning total revenue, total enrollments, average completion rate, and a per-course breakdown (courseId, title, revenue, enrollments). Write full tests for this function: empty state, filtered vs unfiltered, date boundaries, multi-course isolation.
 
----
+Update the `/instructor` route loader to call `getInstructorOverview` with the `?range=` param converted to dates. Render an analytics summary section above the existing course grid: three stat cards (revenue, enrollments, avg completion rate) and a per-course breakdown table. Add a time-range selector (30d / 90d / all) that resubmits the loader. Each course row links to `/instructor/:courseId/analytics`.
 
-## Step 4: Refactor `analyticsService` if needed
+### Done when
 
-Review service code for:
-- Duplicated query fragments → extract helpers
-- Complex SQL → add comments
-- Consistent return shapes
-
-**Verify:** Tests still green.
+- `analyticsService.getInstructorOverview` returns correct aggregates; tests pass for empty state, date filtering, boundary conditions, and multi-course instructor.
+- `/instructor` page renders stat cards and per-course breakdown with working time filter.
+- Course rows link to the (not yet built) per-course analytics page.
 
 ---
 
-## Step 5: Time-range helper
+## Phase 2 -- Per-course analytics: revenue, enrollments, completion
 
-Add a helper (in the analytics route or a shared util) to convert `?range=30d|90d|all` search param into `{ from?: Date, to?: Date }`. `to` is always now; `from` is now minus 30/90 days; `all` = no dates.
+**User stories**: 7, 8, 9, 10, 11, 12, 16, 17, 18, 20
 
-**Verify:** Unit test or inline — simple enough to verify in route tests.
+### What to build
 
----
+Add three service functions to `analyticsService`:
+- `getCourseRevenueSummary({ courseId, from, to })` -- total revenue + transactions array (student name, email, pricePaid, country, date)
+- `getCourseEnrollmentSummary({ courseId, from, to })` -- total count + daily/weekly time series for charting
+- `getCourseCompletionRate({ courseId, from, to })` -- percentage of enrolled students with `completedAt` set
 
-## Step 6: `/instructor` overview — loader + UI
+Write tests for each: empty state, filtered vs unfiltered, date boundaries, partial completions.
 
-Update `app/routes/instructor.tsx`:
+Create `instructor.$courseId.analytics.tsx` route. Register in `app/routes.ts`. Single loader fetches all three summaries. Render:
+- Stat cards (revenue, enrollments, completion rate) at the top
+- Revenue over-time chart (Recharts) + sortable transaction table (date, student, email, amount, country)
+- Enrollment over-time chart
+- Time-range selector (30d / 90d / all)
 
-1. **Loader:** Call `getInstructorOverview({ instructorId, from, to })` using the `?range=` param. Pass data alongside existing loader data.
-2. **UI:** Add an analytics summary section **above** the existing course list:
-   - Three stat cards: total revenue, total enrollments, avg completion rate
-   - Per-course breakdown table (course name, revenue, enrollments) with link to `/instructor/:courseId/analytics`
-   - Time-range selector (30d / 90d / all time) that sets `?range=` and resubmits
+Add "Analytics" link/tab to the instructor course navigation in `instructor.$courseId.tsx`.
 
-**Important:** Additive change only — do not remove or break existing course list.
+### Done when
 
-**Verify:** Screenshot before/after. Existing instructor page behavior preserved.
-
----
-
-## Step 7: `/instructor/:courseId/analytics` — route + loader
-
-Create `app/routes/instructor.$courseId.analytics.tsx`.
-
-**Loader:** Single loader that calls all per-course analytics service functions in parallel (or sequentially if DB is synchronous):
-- `getCourseRevenueSummary`
-- `getCourseEnrollmentSummary`
-- `getCourseCompletionRate`
-- `getModuleQuizPassRates`
-- `getLessonDropoff`
-
-Convert `?range=` to `from`/`to` dates. Pass `getLessonDropoff` without time filter.
-
-Auth: verify current user is the course instructor.
-
-**Verify:** Loader returns expected shape. No UI yet — just data.
+- All three service functions return correct data; tests pass including edge cases.
+- `/instructor/:courseId/analytics` renders stat cards, revenue chart, transaction table, enrollment chart with working time filter.
+- "Analytics" tab visible in course editor navigation.
 
 ---
 
-## Step 8: Analytics page — stat cards + time filter
+## Phase 3 -- Quiz pass rates and lesson drop-off funnel
 
-Render at the top of the analytics page:
-- Revenue stat card (convert cents to dollars)
-- Enrollments stat card
-- Completion rate stat card (percentage)
-- Time-range selector (30d / 90d / all time)
+**User stories**: 13, 14, 15, 19
 
-**Verify:** Screenshot. Cards display correct data from loader.
+### What to build
 
----
+Add two service functions to `analyticsService`:
+- `getModuleQuizPassRates({ courseId, from, to })` -- per module: title, attempt count, pass percentage (using latest attempt per student per quiz)
+- `getLessonDropoff({ courseId })` -- ordered list of lessons (by module position, then lesson position) with % of enrolled students who never started (no time filter)
 
-## Step 9: Analytics page — revenue chart + transaction table
+Write tests for each: empty state, latest-attempt-per-student logic (retries don't inflate failures), drop-off ordering correctness, filtered quiz rates.
 
-**Revenue chart:** Line/area chart (recharts) showing revenue over time from `getCourseRevenueSummary` daily data.
+Add to the per-course analytics page:
+- Module quiz pass rate table (module title, attempts, pass %)
+- Lesson drop-off funnel chart ordered by lesson sequence
 
-**Transaction table:** Student name, email, amount paid (formatted from cents), country, date. Sortable by date and amount (client-side sort).
+### Done when
 
-**Verify:** Screenshot. Chart renders. Table is sortable.
-
----
-
-## Step 10: Analytics page — enrollment chart
-
-Line/area chart showing enrollments over time from `getCourseEnrollmentSummary` daily data.
-
-**Verify:** Screenshot. Chart renders with correct data.
+- Both service functions return correct data; tests pass including retry logic and ordering.
+- Per-course analytics page shows quiz pass rate table and drop-off funnel.
+- All `analyticsService` functions have full test coverage.
 
 ---
 
-## Step 11: Analytics page — quiz pass rates table
+## Out of Scope
 
-Table with columns: module title, attempt count, pass percentage. Data from `getModuleQuizPassRates`.
+- Real-time / live-updating metrics (no WebSockets or polling)
+- Exporting analytics data to CSV or PDF
+- Email digest reports for instructors
+- Student-level drill-down from the drop-off funnel
+- Revenue forecasting or projections
+- Refund tracking or net revenue after refunds
+- Cohort analysis or retention curves
+- Period-over-period comparison (e.g. this month vs. last month)
+- Admin-level analytics across all instructors
 
-**Verify:** Screenshot. Correct data per module.
+## Open Questions
 
----
-
-## Step 12: Analytics page — lesson drop-off funnel
-
-Bar/funnel chart showing per-lesson drop-off percentage. Ordered by module position then lesson position. Data from `getLessonDropoff`.
-
-**Verify:** Screenshot. Lessons in correct order. Percentages make sense.
-
----
-
-## Step 13: Navigation link
-
-Add "Analytics" link to the per-course instructor navigation (alongside existing tabs like Modules, Students, etc.) pointing to `/instructor/:courseId/analytics`.
-
-**Verify:** Link visible and navigates correctly.
-
----
-
-## Step 14: Full verification
-
-- `pnpm vitest run` — all tests pass
-- `pnpm typecheck` — no type errors
-- Manual walkthrough: instructor overview → per-course analytics → all sections
-- Empty state: course with no purchases/enrollments shows zeros, no crashes
-- Time filter: switching ranges updates all metrics
-
----
-
-## Key References
-
-| What | Where |
-|---|---|
-| DB schema | `app/db/schema.ts` |
-| Service pattern | `app/services/courseService.ts` |
-| Test pattern | `app/services/courseService.test.ts` |
-| Test setup/seeding | `app/test/setup.ts` |
-| Instructor routes | `app/routes/instructor.tsx`, `instructor.$courseId.tsx` |
-| Auth pattern | `app/lib/session.ts` → `getCurrentUserId` |
-| Validation | `app/lib/validation.ts` → `parseParams`, `parseFormData` |
-| Route params | Valibot schemas in each route |
+None.

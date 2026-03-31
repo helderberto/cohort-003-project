@@ -67,6 +67,7 @@ import {
   Users,
   AlertTriangle,
   Award,
+  BarChart3,
   Globe,
   FileText,
 } from "lucide-react";
@@ -1194,6 +1195,12 @@ export default function InstructorCourseEditor({
           <TabsTrigger value="students">
             <Users className="size-4" />
             Students
+          </TabsTrigger>
+          <TabsTrigger value="analytics" asChild>
+            <Link to={`/instructor/${course.id}/analytics`}>
+              <BarChart3 className="size-4" />
+              Analytics
+            </Link>
           </TabsTrigger>
         </TabsList>
 

@@ -19,6 +19,15 @@ import {
   TrendingUp,
   Users,
 } from "lucide-react";
+import {
+  ResponsiveContainer,
+  AreaChart,
+  Area,
+  XAxis,
+  YAxis,
+  CartesianGrid,
+  Tooltip,
+} from "recharts";
 import { Button } from "~/components/ui/button";
 import { data, isRouteErrorResponse } from "react-router";
 import { UserRole } from "~/db/schema";
@@ -184,6 +193,41 @@ export default function InstructorAnalytics({
           </CardContent>
         </Card>
       </div>
+
+      {/* Revenue Over Time Chart */}
+      <Card className="mb-8">
+        <CardHeader>
+          <h2 className="text-lg font-semibold">Revenue Over Time</h2>
+        </CardHeader>
+        <CardContent>
+          {overview.revenueTimeSeries.length > 0 ? (
+            <ResponsiveContainer width="100%" height={300}>
+              <AreaChart data={overview.revenueTimeSeries}>
+                <CartesianGrid strokeDasharray="3 3" />
+                <XAxis dataKey="date" tick={{ fontSize: 12 }} />
+                <YAxis
+                  tick={{ fontSize: 12 }}
+                  tickFormatter={(v: number) => `$${(v / 100).toFixed(0)}`}
+                />
+                <Tooltip
+                  formatter={(value) => [formatCurrency(Number(value)), "Revenue"]}
+                />
+                <Area
+                  type="monotone"
+                  dataKey="value"
+                  stroke="hsl(142, 71%, 45%)"
+                  fill="hsl(142, 71%, 45%)"
+                  fillOpacity={0.1}
+                />
+              </AreaChart>
+            </ResponsiveContainer>
+          ) : (
+            <p className="py-8 text-center text-muted-foreground">
+              No revenue data for this period.
+            </p>
+          )}
+        </CardContent>
+      </Card>
 
       {/* Per-Course Breakdown */}
       {overview.courses.length > 0 ? (

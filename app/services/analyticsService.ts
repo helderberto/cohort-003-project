@@ -81,11 +81,37 @@ export function getInstructorOverview({
       ? Math.round(completionRateSum / coursesWithEnrollments)
       : 0;
 
+  // Aggregate revenue time series across all instructor courses
+  const courseIds = instructorCourses.map((c) => c.id);
+  let revenueTimeSeries: Array<{ date: string; value: number }> = [];
+
+  if (courseIds.length > 0) {
+    const tsConditions = [
+      sql`${purchases.courseId} IN (${sql.raw(courseIds.join(","))})`,
+    ];
+    if (from) tsConditions.push(gte(purchases.createdAt, from.toISOString()));
+    if (to) tsConditions.push(lte(purchases.createdAt, toEndOfDay(to)));
+
+    const rows = db
+      .select({
+        date: sql<string>`substr(${purchases.createdAt}, 1, 10)`,
+        value: sql<number>`sum(${purchases.pricePaid})`,
+      })
+      .from(purchases)
+      .where(and(...tsConditions))
+      .groupBy(sql`substr(${purchases.createdAt}, 1, 10)`)
+      .orderBy(sql`substr(${purchases.createdAt}, 1, 10)`)
+      .all();
+
+    revenueTimeSeries = rows.map((r) => ({ date: r.date, value: Number(r.value) }));
+  }
+
   return {
     totalRevenue,
     totalEnrollments,
     avgCompletionRate,
     courses: coursesBreakdown,
+    revenueTimeSeries,
   };
 }
 

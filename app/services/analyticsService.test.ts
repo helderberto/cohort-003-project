@@ -332,6 +332,88 @@ describe("analyticsService", () => {
       const result = getInstructorOverview({ instructorId: base.instructor.id });
       expect(result.avgCompletionRate).toBe(0);
     });
+
+    it("returns revenue time series aggregated across courses", () => {
+      const course2 = testDb
+        .insert(schema.courses)
+        .values({
+          title: "Second Course",
+          slug: "second-course",
+          description: "Second",
+          instructorId: base.instructor.id,
+          categoryId: base.category.id,
+          status: schema.CourseStatus.Published,
+        })
+        .returning()
+        .get();
+
+      testDb
+        .insert(schema.purchases)
+        .values([
+          {
+            userId: base.user.id,
+            courseId: base.course.id,
+            pricePaid: 1000,
+            country: "US",
+            createdAt: "2026-02-10T10:00:00.000Z",
+          },
+          {
+            userId: base.user.id,
+            courseId: course2.id,
+            pricePaid: 2000,
+            country: "US",
+            createdAt: "2026-02-10T15:00:00.000Z",
+          },
+          {
+            userId: base.user.id,
+            courseId: base.course.id,
+            pricePaid: 3000,
+            country: "US",
+            createdAt: "2026-02-11T10:00:00.000Z",
+          },
+        ])
+        .run();
+
+      const result = getInstructorOverview({ instructorId: base.instructor.id });
+      expect(result.revenueTimeSeries).toHaveLength(2);
+      expect(result.revenueTimeSeries[0]).toEqual({ date: "2026-02-10", value: 3000 });
+      expect(result.revenueTimeSeries[1]).toEqual({ date: "2026-02-11", value: 3000 });
+    });
+
+    it("returns empty revenue time series when no purchases", () => {
+      const result = getInstructorOverview({ instructorId: base.instructor.id });
+      expect(result.revenueTimeSeries).toEqual([]);
+    });
+
+    it("filters revenue time series by date range", () => {
+      testDb
+        .insert(schema.purchases)
+        .values([
+          {
+            userId: base.user.id,
+            courseId: base.course.id,
+            pricePaid: 1000,
+            country: "US",
+            createdAt: "2026-01-15T00:00:00.000Z",
+          },
+          {
+            userId: base.user.id,
+            courseId: base.course.id,
+            pricePaid: 2000,
+            country: "US",
+            createdAt: "2026-02-15T00:00:00.000Z",
+          },
+        ])
+        .run();
+
+      const result = getInstructorOverview({
+        instructorId: base.instructor.id,
+        from: new Date("2026-02-01"),
+        to: new Date("2026-02-28"),
+      });
+      expect(result.revenueTimeSeries).toHaveLength(1);
+      expect(result.revenueTimeSeries[0]).toEqual({ date: "2026-02-15", value: 2000 });
+    });
   });
 
   // ─── getCourseRevenueSummary ───

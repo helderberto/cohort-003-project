@@ -1,6 +1,6 @@
 ---
 name: do-work
-description: Execute a unit of work end-to-end — plan, implement, verify, commit. Use when user says "do work", "implement this", "build this feature", or describes a discrete piece of work to complete. Don't use for exploratory research, code review, or when user only wants a plan without implementation.
+description: "Execute a unit of work end-to-end: plan, implement, validate with typecheck and tests, then commit. Use when user wants to do work, build a feature, fix a bug, or implement a phase from a plan."
 ---
 
 # Do Work
